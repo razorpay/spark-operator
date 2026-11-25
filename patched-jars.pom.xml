@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Manifest of the patched replacement jars for the hardened Kubeflow Spark Operator 2.6.0 image
+  (built FROM the Harbor-approved apache/spark:4.2.1 mirror). Maven resolves each artifact from
+  Maven Central and verifies its published checksum
+  automatically (no hand-copied sha256). The Dockerfile's resolver stage runs
+  `mvn dependency:copy-dependencies -DexcludeTransitive=true` against this pom, then drops the
+  resulting jars into /opt/spark/jars on top of the base image, replacing the vulnerable
+  versions. Only Spark-ABI-safe patch/minor bumps are listed here.
+
+  Versions are the trivy "fixed version" for each finding:
+    netty       4.2.13.Final -> 4.2.17.Final   (CRITICAL CVE-2026-75595 + 10 HIGH)
+    jackson     2.21.2       -> 2.21.7          (8 HIGH across core + databind)
+    snappy-java 1.1.10.8     -> 1.1.10.9        (2 HIGH)
+    lz4-java    1.11.0       -> 1.11.4          (1 HIGH)
+    guava       33.6.0-jre   -> 33.7.2-jre      (1 HIGH)
+    jline (3.x) 3.29.0       -> 3.30.15         (4 HIGH)
+    derby       10.16.1.1    -> 10.17.1.0       (CRITICAL CVE-2022-46337; 10.16.1.2 never on Central)
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.razorpay.de</groupId>
+  <artifactId>spark-operator-2.6.0-patched-jars</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <netty.version>4.2.17.Final</netty.version>
+    <jackson.version>2.21.7</jackson.version>
+    <!-- 10.16.1.2 (the same-line CVE fix) was never published to Central; 10.17.1.0 is the
+         lowest Central-available version carrying the fix and still targets Java 21 (Spark 4). -->
+    <derby.version>10.17.1.0</derby.version>
+  </properties>
+
+  <dependencies>
+    <!-- netty: replace the full 4.2.13.Final set so the classpath stays single-version -->
+    <dependency><groupId>io.netty</groupId><artifactId>netty-all</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-buffer</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec-base</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec-compression</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec-dns</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec-http</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec-http2</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-codec-socks</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-common</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-handler-proxy</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-resolver</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-resolver-dns</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-classes-epoll</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-classes-kqueue</artifactId><version>${netty.version}</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-unix-common</artifactId><version>${netty.version}</version></dependency>
+    <!-- netty native transports (per-arch classifiers present in the base image) -->
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId><version>${netty.version}</version><classifier>linux-x86_64</classifier></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId><version>${netty.version}</version><classifier>linux-aarch_64</classifier></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId><version>${netty.version}</version><classifier>linux-riscv64</classifier></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-kqueue</artifactId><version>${netty.version}</version><classifier>osx-x86_64</classifier></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-kqueue</artifactId><version>${netty.version}</version><classifier>osx-aarch_64</classifier></dependency>
+
+    <!-- jackson: core + databind are the flagged ones; bump the whole suite to stay aligned -->
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>${jackson.version}</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.dataformat</groupId><artifactId>jackson-dataformat-yaml</artifactId><version>${jackson.version}</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>${jackson.version}</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-scala_2.13</artifactId><version>${jackson.version}</version></dependency>
+
+    <!-- standalone single-jar bumps -->
+    <dependency><groupId>org.xerial.snappy</groupId><artifactId>snappy-java</artifactId><version>1.1.10.9</version></dependency>
+    <dependency><groupId>at.yawk.lz4</groupId><artifactId>lz4-java</artifactId><version>1.11.4</version></dependency>
+    <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>33.7.2-jre</version></dependency>
+    <dependency><groupId>org.jline</groupId><artifactId>jline</artifactId><version>3.30.15</version></dependency>
+
+    <!-- derby set (CRITICAL CVE-2022-46337) -->
+    <dependency><groupId>org.apache.derby</groupId><artifactId>derby</artifactId><version>${derby.version}</version></dependency>
+    <dependency><groupId>org.apache.derby</groupId><artifactId>derbyshared</artifactId><version>${derby.version}</version></dependency>
+    <dependency><groupId>org.apache.derby</groupId><artifactId>derbytools</artifactId><version>${derby.version}</version></dependency>
+  </dependencies>
+</project>
