@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Resolve through Google's GCS mirror of Maven Central instead of repo.maven.apache.org, which
+  rate-limits the shared CI egress IP (HTTP 429). This mirrors the established Razorpay pattern:
+  razorpay/spark-kubernetes-operator's build.gradle places the same GCS mirror first "so that it's
+  used instead of flaky Maven Central". The mirror is a byte-identical copy of Central and Maven
+  still verifies artifact checksums. mirrorOf=central redirects both the dependency and plugin
+  resolution (both use the "central" repo id).
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>gcs-maven-central</id>
+      <name>GCS Maven Central mirror</name>
+      <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>

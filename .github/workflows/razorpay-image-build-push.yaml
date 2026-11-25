@@ -1,0 +1,118 @@
+# Razorpay: build the hardened Spark Operator image from source and push it to Harbor (c.rzp.io).
+#
+# Mirrors datahub's custom-base-images CI 1:1 — same self-hosted runners (linux-amd64/linux-arm64),
+# the same internal razorpay/docker-image-build-push action for per-arch build and for the
+# multi-arch manifest, and the same HARBOR_DOCKER_* org secrets. It builds the controller image
+# from THIS repo's Dockerfile: the operator Go binary is rebuilt with the bumped go.mod (0 Go
+# CVEs), FROM the Harbor-approved apache/spark:4.2.1 mirror, with the Spark base hardened (apt
+# upgrade, patched jar swaps, gosu removed). The published tag is then whitelisted in
+# rzp-docker-image-inventory as a custom base image.
+#
+# Requires (same as datahub): access to the private razorpay/docker-image-build-push action and
+# the HARBOR_DOCKER_USERNAME / HARBOR_DOCKER_PASSWORD org secrets reaching this repo.
+
+name: Razorpay Image Build and Push
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - master
+      - 'feature/razorpay-**'
+
+env:
+  DOCKER_BUILDKIT: 1
+  REGISTRY: c.rzp.io
+  # Harbor repository under the razorpay project: c.rzp.io/razorpay/spark-operator
+  REPOSITORY: spark-operator
+  # Operator version this image ships; bump with the release. HARDEN_REV tracks the Razorpay
+  # hardening revision independently of the operator version.
+  OP_VERSION: "2.6.0"
+  HARDEN_REV: "hardened-v1"
+
+jobs:
+  # Native per-arch build on the matching self-hosted runner, published with an arch-suffixed tag.
+  build:
+    name: Build controller (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux-amd64
+          - linux-arm64
+    runs-on:
+      - ${{ matrix.platform }}
+    steps:
+      - name: Checkout Codebase
+        # Pinned to an immutable SHA (v4.1.0), same as datahub: a mutable tag can be repointed to
+        # attacker code that runs on the self-hosted runner ahead of the credentialed steps.
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+
+      - name: Resolve image tag
+        id: tag
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BASE="controller-${OP_VERSION}-${HARDEN_REV}"
+          if [ "${GITHUB_REF}" = "refs/heads/master" ]; then
+            TAG="${BASE}"
+          else
+            TAG="${BASE}-${COMMIT_SHA}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Publishing: ${REGISTRY}/razorpay/${REPOSITORY}:${TAG}-${{ matrix.platform }}"
+
+      - name: Build and push (${{ matrix.platform }})
+        # Pinned to the internal action's v1 branch HEAD, same pin datahub uses.
+        uses: razorpay/docker-image-build-push@149c7e92cf1a93d19239cff57a8fc3a61c48ed5e
+        with:
+          username: ${{ secrets.HARBOR_DOCKER_USERNAME }}
+          password: ${{ secrets.HARBOR_DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          repository: ${{ env.REPOSITORY }}
+          context: .
+          file: Dockerfile
+          custom-tag: ${{ steps.tag.outputs.tag }}-${{ matrix.platform }}
+          enable-login: true
+          push: true
+
+  # Publishes the multi-arch manifest tag consumers pin, from the arch-suffixed tags above.
+  build-multiarch:
+    name: Create multi-arch manifest
+    needs:
+      - build
+    runs-on:
+      - linux-amd64
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+
+      - name: Resolve image tag
+        id: tag
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BASE="controller-${OP_VERSION}-${HARDEN_REV}"
+          if [ "${GITHUB_REF}" = "refs/heads/master" ]; then
+            TAG="${BASE}"
+          else
+            TAG="${BASE}-${COMMIT_SHA}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Publishing: ${REGISTRY}/razorpay/${REPOSITORY}:${TAG}"
+
+      - name: Create multiarch image
+        uses: razorpay/docker-image-build-push@149c7e92cf1a93d19239cff57a8fc3a61c48ed5e
+        with:
+          username: ${{ secrets.HARBOR_DOCKER_USERNAME }}
+          password: ${{ secrets.HARBOR_DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          repository: ${{ env.REPOSITORY }}
+          custom-tag: ${{ steps.tag.outputs.tag }}
+          trigger-multiarch-image-build: true
+          multiarch-suffixes: |
+            -linux-amd64
+            -linux-arm64
+          enable-login: true
